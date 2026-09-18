@@ -25,6 +25,12 @@ def commit_and_push_image():
     """把生成的图片提交并推送到当前仓库，返回可公开访问的 raw URL。"""
     subprocess.run(["git", "config", "user.name", "story-bot"], check=True)
     subprocess.run(["git", "config", "user.email", "story-bot@users.noreply.github.com"], check=True)
+
+    # 推送前先同步一下远端，避免因为期间有别的提交(比如手动改代码)导致 push 被拒绝。
+    # 这里只重置代码文件的指针，故事图片是待会才生成/add 的未跟踪文件，不会被这步影响。
+    subprocess.run(["git", "fetch", "origin", GITHUB_REF_NAME], check=True)
+    subprocess.run(["git", "reset", "--soft", f"origin/{GITHUB_REF_NAME}"], check=True)
+
     subprocess.run(["git", "add", "output/story.png"], check=True)
 
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
@@ -32,7 +38,17 @@ def commit_and_push_image():
         print("图片内容没有变化，跳过提交。")
     else:
         subprocess.run(["git", "commit", "-m", "chore: update daily story image"], check=True)
-        subprocess.run(["git", "push"], check=True)
+
+        # push 时如果又被别的提交抢先，重试几次：每次都重新 fetch + rebase 再推。
+        for attempt in range(3):
+            push = subprocess.run(["git", "push"])
+            if push.returncode == 0:
+                break
+            print(f"push 被拒绝，重试同步 (第 {attempt + 1} 次)...")
+            subprocess.run(["git", "fetch", "origin", GITHUB_REF_NAME], check=True)
+            subprocess.run(["git", "rebase", f"origin/{GITHUB_REF_NAME}"], check=True)
+        else:
+            raise RuntimeError("多次尝试后 git push 仍然失败")
 
     # 加时间戳参数破缓存，确保 Instagram 抓到的是最新图片
     cache_buster = int(time.time())
