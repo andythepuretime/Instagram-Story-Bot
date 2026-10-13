@@ -2,7 +2,7 @@ name: Daily Instagram Story
 
 on:
   schedule:
-    - cron: "47 11 * * *"
+    - cron: "47 8 * * *"
   workflow_dispatch: {}
 
 permissions:
